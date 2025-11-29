@@ -28,6 +28,7 @@ typedef struct FontFileFT {
 
 typedef struct FontFT {
     uint32_t uid;
+    int baseSize;
     FT_SizeRec_ *size;
 } FontFT;
 

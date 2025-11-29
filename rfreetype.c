@@ -169,7 +169,7 @@ LoadFontFT(FontFileFT fontFile, unsigned int height, FontCacheFT fontCache)
     }
 
     if (fontFile.face == NULL || FT_New_Size(fontFile.face, &size)) {
-        return (FontFT){0, NULL};
+        return (FontFT){0, height, NULL};
     }
 
     FT_Activate_Size(size);
@@ -180,7 +180,7 @@ LoadFontFT(FontFileFT fontFile, unsigned int height, FontCacheFT fontCache)
         fontCache.cache->uidMap[uid / 32] |= uid;
     }
 
-    return (FontFT){uid, size};
+    return (FontFT){uid, height, size};
 }
 
 // Returns advance
