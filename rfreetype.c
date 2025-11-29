@@ -103,12 +103,18 @@ Compare_rFontCacheEntryFT(const void *a_, const void *b_)
 FontCacheFT
 LoadFontCacheFT(uint32_t cellWidth, uint32_t cellHeight, uint32_t nmemb)
 {
+    int rc = 0;
+    unsigned char *memory = NULL;
+
     size_t hashmapSize, cacheSize;
-    lru_cache_calc_sizes(sizeof(rFontCacheEntryFT), nmemb, &hashmapSize, &cacheSize);
+    rc = lru_cache_calc_sizes(sizeof(rFontCacheEntryFT), nmemb, &hashmapSize, &cacheSize);
+    if (rc < 0) goto invalid_argument;
 
     size_t baseSize = sizeof(rFontCacheFT) + (nmemb * sizeof(FT_Glyph_Metrics));
     size_t totalSize = baseSize + hashmapSize + cacheSize;
-    unsigned char *memory = malloc(totalSize);
+
+    memory = malloc(totalSize);
+    if (memory == NULL) goto cannot_allocate_memory;
 
     rFontCacheFT *fontCache = (rFontCacheFT *)&memory[0];
     uint32_t *hashmap = (uint32_t *)&memory[baseSize];
@@ -118,49 +124,100 @@ LoadFontCacheFT(uint32_t cellWidth, uint32_t cellHeight, uint32_t nmemb)
     fontCache->cellWidth = cellWidth;
     fontCache->cellHeight = cellHeight;
 
-    lru_cache_init(
+    rc = lru_cache_init(
         &fontCache->lc,
         sizeof(rFontCacheEntryFT),
         Hash_rFontCacheEntryFT,
         Compare_rFontCacheEntryFT,
         NULL
     );
+    if (rc < 0) goto invalid_argument;
 
-    lru_cache_set_nmemb(&fontCache->lc, nmemb, NULL, NULL);
-    lru_cache_set_memory(&fontCache->lc, hashmap, cache);
+    rc = lru_cache_set_nmemb(&fontCache->lc, nmemb, NULL, NULL);
+    if (rc < 0) goto invalid_argument;
+
+    rc = lru_cache_set_memory(&fontCache->lc, hashmap, cache);
+    if (rc < 0) goto invalid_argument;
+
     return (FontCacheFT){fontCache};
+
+cannot_allocate_memory:
+    free(memory);
+    TRACELOG(LOG_WARNING, "FONTFT: Failed to allocate memory for cache structure");
+    return (FontCacheFT){NULL};
+
+invalid_argument:
+    free(memory);
+    TRACELOG(LOG_WARNING, "FONTFT: Invalid arguments supplied for cache structure");
+    return (FontCacheFT){NULL};
 }
 
 FontFileFT
 LoadFontFileFT(const char *filename)
 {
-    if (!ftLibrary) {
-        FT_Init_FreeType(&ftLibrary);
+    FT_Error error;
+
+    if (!ftLibrary && (error = FT_Init_FreeType(&ftLibrary))) {
+        goto error_init_freetype;
     }
 
-    FT_Face face;
-    FT_New_Face(ftLibrary, filename, 0, &face);
+    FT_Face face = NULL;
+    if ((error = FT_New_Face(ftLibrary, filename, 0, &face))) {
+        goto error_new_face;
+    }
+
+    // face->generic.data = ;
+    // face->generic.finalizer = ;
     return (FontFileFT){face};
+
+error_init_freetype:
+    TRACELOG(LOG_WARNING, "FONTFT: Failed to initialize freetype (%s)", FT_Error_String(error));
+    return (FontFileFT){NULL};
+
+error_new_face:
+    TRACELOG(LOG_WARNING, "FONTFT: Failed to create the font face (%s)", FT_Error_String(error));
+    return (FontFileFT){NULL};
 }
 
 FontFileFT
 LoadFontFileFromMemoryFT(const unsigned char *data, int dataSize)
 {
-    if (!ftLibrary) {
-        FT_Init_FreeType(&ftLibrary);
+    FT_Error error;
+    FontFileFT out = (FontFileFT){NULL};
+
+    if (!ftLibrary && (error = FT_Init_FreeType(&ftLibrary))) {
+        goto error_init_freetype;
     }
 
-    FT_Face face;
-    FT_New_Memory_Face(ftLibrary, data, dataSize, 0, &face);
-    return (FontFileFT){face};
+    FT_Face face = NULL;
+    if ((error = FT_New_Memory_Face(ftLibrary, data, dataSize, 0, &face))) {
+        goto error_new_face;
+    }
+
+    out.face = face;
+    return out;
+
+error_init_freetype:
+    TRACELOG(LOG_WARNING, "FONTFT: Failed to initialize freetype (%s)", FT_Error_String(error));
+    return out;
+
+error_new_face:
+    TRACELOG(LOG_WARNING, "FONTFT: Failed to create the font face (%s)", FT_Error_String(error));
+    return out;
 }
 
 
 FontFT
 LoadFontFT(FontFileFT fontFile, unsigned int height, FontCacheFT fontCache)
 {
-    FT_Size size;
+    FT_Error error;
+    FontFT out = (FontFT){0, height, NULL};
+    FT_Size size = NULL;
     uint32_t uid = 0;
+
+    if (fontFile.face == NULL) {
+        return out;
+    }
 
     if (fontCache.cache) {
         for (int i = 0; i < (1 << 11) && !uid; i++) {
@@ -168,24 +225,67 @@ LoadFontFT(FontFileFT fontFile, unsigned int height, FontCacheFT fontCache)
         }
     }
 
-    if (fontFile.face == NULL || FT_New_Size(fontFile.face, &size)) {
-        return (FontFT){0, height, NULL};
+    if (fontFile.face == NULL || (error = FT_New_Size(fontFile.face, &size))) {
+        goto error_new_size;
     }
 
-    FT_Activate_Size(size);
-    FT_Set_Pixel_Sizes(fontFile.face, 0, height);
+    if ((error = FT_Activate_Size(size))) {
+        goto error_activate_size;
+    }
+
+    if ((error = FT_Set_Pixel_Sizes(fontFile.face, 0, height))) {
+        goto error_set_pixel_sizes;
+    }
 
     if (fontCache.cache && uid) {
         size->generic.data = fontCache.cache;
         fontCache.cache->uidMap[uid / 32] |= uid;
     }
 
-    return (FontFT){uid, height, size};
+    out.uid = uid;
+    out.size = size;
+    return out;
+
+error_set_pixel_sizes:
+    FT_Done_Size(size);
+    TRACELOG(LOG_WARNING, "FONTFT: Failed to set the requested pixel size (%s)", FT_Error_String(error));
+    return out;
+
+error_activate_size:
+    FT_Done_Size(size);
+    TRACELOG(LOG_WARNING, "FONTFT: Failed to actiavte the font size (%s)", FT_Error_String(error));
+    return out;
+
+error_new_size:
+    TRACELOG(LOG_WARNING, "FONTFT: Failed to create the font size (%s)", FT_Error_String(error));
+    return out;
+
 }
 
 // Returns advance
 Vector2 DrawTextCodepointFT(FontFT font, int codepoint, Vector2 position, Color tint)
 {
+    if (true) {
+        Font defaultFont = GetFontDefault();
+        int index = GetGlyphIndex(defaultFont, codepoint);
+        if (codepoint == '\n') {
+            return (Vector2){0, font.baseSize};
+        }
+
+        float scaling = font.baseSize / defaultFont.baseSize;
+        float offsetX = scaling/2;
+
+        DrawTextCodepoint(
+            defaultFont,
+            codepoint,
+            (Vector2){position.x + offsetX, position.y},
+            font.baseSize,
+            tint
+        );
+
+        return (Vector2){scaling + defaultFont.recs[index].width * scaling, font.baseSize};
+    }
+
     rFontCacheFT *fontCache = font.size->generic.data;
     FT_Size size = font.size;
     FT_Face face = font.size->face;
@@ -195,7 +295,7 @@ Vector2 DrawTextCodepointFT(FontFT font, int codepoint, Vector2 position, Color 
         .index = 0,
     };
 
-    if (fontCache->gridWidth * fontCache->gridHeight == 0) {
+    if (fontCache && fontCache->gridWidth * fontCache->gridHeight == 0) {
         InitializeFontCache(fontCache);
     }
 
@@ -286,7 +386,7 @@ Vector2 DrawTextCodepointFT(FontFT font, int codepoint, Vector2 position, Color 
             continue;
         }
 
-        return (Vector2){metrics.advanceX, metrics.offsetY + metrics.height};
+        return (Vector2){metrics.advanceX, size->metrics.height >> 6};
     }
 }
 
