@@ -244,6 +244,8 @@ Vector2 DrawTextCodepointFT(FontFT font, int codepoint, Vector2 position, Color 
             h = fontCache->cellHeight;
 
         if (put) {
+            rlDrawRenderBatchActive();
+
             glBindTexture(GL_TEXTURE_2D, fontCache->texture.id);
 
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -253,32 +255,28 @@ Vector2 DrawTextCodepointFT(FontFT font, int codepoint, Vector2 position, Color 
 
             GLint swizzle[] = {GL_ONE, GL_ONE, GL_ONE, GL_ALPHA};
             glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
-            glTexSubImage2D(
-                GL_TEXTURE_2D,
-                0,
-                x,
-                y,
-                w,
-                h,
-                GL_ALPHA,
-                GL_UNSIGNED_BYTE,
-                face->glyph->bitmap.buffer
-            );
+            glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_ALPHA, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
+
+            glBindTexture(GL_TEXTURE_2D, 0);
         }
 
         DrawTexturePro(
             fontCache->texture,
             (Rectangle){ x, y, w, h },
-            (Rectangle){ position.x + metrics.offsetX, position.y + metrics.offsetY, w, h },
+            (Rectangle){
+                i * fontCache->cellWidth + position.x + metrics.offsetX,
+                j * fontCache->cellHeight + position.y + metrics.offsetY,
+                w,
+                h
+            },
             (Vector2){ 0, 0 },
             0.0f,
             tint
         );
-
         entry.index++;
 
         if (w == fontCache->cellWidth) {
-            i++;
+            i = i + 1;
             continue;
         }
 
