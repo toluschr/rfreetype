@@ -217,7 +217,7 @@ Vector2 DrawTextCodepointFT(FontFT font, int codepoint, Vector2 position, Color 
             FT_UInt char_index = FT_Get_Char_Index(face, codepoint);
 
             if (face->glyph->glyph_index != char_index) {
-                FT_Load_Glyph(face, char_index, FT_LOAD_NO_HINTING | FT_LOAD_DEFAULT);
+                FT_Load_Glyph(face, char_index, FT_LOAD_DEFAULT);
 
                 if (face->glyph->format != FT_GLYPH_FORMAT_BITMAP) {
                     FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
