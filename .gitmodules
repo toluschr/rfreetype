@@ -1,0 +1,6 @@
+[submodule "lru-cache"]
+	path = lru-cache
+	url = https://github.com/toluschr/lru-cache.git
+[submodule "third_party/lru-cache"]
+	path = third_party/lru-cache
+	url = https://github.com/toluschr/lru-cache.git
