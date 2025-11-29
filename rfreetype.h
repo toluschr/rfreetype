@@ -33,6 +33,7 @@ typedef struct FontFT {
 
 FontCacheFT LoadFontCacheFT(uint32_t baseWidth, uint32_t baseHeight, uint32_t nmemb);
 
+FontFileFT LoadFontFileFromMemoryFT(const unsigned char *data, int dataSize);
 FontFileFT LoadFontFileFT(const char *filename);
 FontFT LoadFontFT(FontFileFT fontFile, unsigned int height, FontCacheFT fontCache);
 

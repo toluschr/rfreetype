@@ -140,9 +140,21 @@ LoadFontFileFT(const char *filename)
 
     FT_Face face;
     FT_New_Face(ftLibrary, filename, 0, &face);
-
     return (FontFileFT){face};
 }
+
+FontFileFT
+LoadFontFileFromMemoryFT(const unsigned char *data, int dataSize)
+{
+    if (!ftLibrary) {
+        FT_Init_FreeType(&ftLibrary);
+    }
+
+    FT_Face face;
+    FT_New_Memory_Face(ftLibrary, data, dataSize, 0, &face);
+    return (FontFileFT){face};
+}
+
 
 FontFT
 LoadFontFT(FontFileFT fontFile, unsigned int height, FontCacheFT fontCache)
