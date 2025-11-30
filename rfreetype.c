@@ -435,6 +435,8 @@ DrawTextCodepointsFT(FontFT font, const int *codepoints, int codepointCount, Vec
 void
 UnloadFontFT(FontFT font)
 {
+    if (!font.size) return;
+
     rFontCacheFT *fontCache = font.size->generic.data;
 
     if (fontCache && font.uid) {
@@ -457,15 +459,16 @@ UnloadFontFT(FontFT font)
 void
 UnloadFontFileFT(FontFileFT fontFile)
 {
+    if (!fontFile.face) return;
+
     FT_Done_Face(fontFile.face);
 }
 
 void
 UnloadFontCacheFT(FontCacheFT fontCache)
 {
-    if (fontCache.cache) {
-        UnloadTexture(fontCache.cache->texture);
-    }
+    if (!fontCache.cache) return;
 
+    UnloadTexture(fontCache.cache->texture);
     free(fontCache.cache);
 }
