@@ -265,7 +265,7 @@ error_new_size:
 // Returns advance
 Vector2 DrawTextCodepointFT(FontFT font, int codepoint, Vector2 position, Color tint)
 {
-    if (true) {
+    if (font.size == NULL || font.size->generic.data == NULL) {
         Font defaultFont = GetFontDefault();
         int index = GetGlyphIndex(defaultFont, codepoint);
         if (codepoint == '\n') {
