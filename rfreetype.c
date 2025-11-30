@@ -395,12 +395,22 @@ DrawTextFT(FontFT font, const char *text, int x, int y, Color tint)
 {
     Vector2 position = (Vector2){x, y};
     Vector2 current = position;
+    Vector2 max = position;
 
     for (int i = 0; text[i]; ) {
         int codepointSize = 0;
         int codepoint = GetCodepointNext(&text[i], &codepointSize);
 
         Vector2 metrics = DrawTextCodepointFT(font, codepoint, current, tint);
+
+        if (max.x < current.x + metrics.x) {
+            max.x = current.x + metrics.x;
+        }
+
+        if (max.y < current.y + metrics.y) {
+            max.y = current.y + metrics.y;
+        }
+
         if (metrics.x == 0) {
             current.y += metrics.y;
             current.x = position.x;
@@ -411,16 +421,26 @@ DrawTextFT(FontFT font, const char *text, int x, int y, Color tint)
         i += codepointSize;
     }
 
-    return Vector2Subtract(current, position);
+    return Vector2Subtract(max, position);
 }
 
 Vector2
 DrawTextCodepointsFT(FontFT font, const int *codepoints, int codepointCount, Vector2 position, Color tint)
 {
     Vector2 current = position;
+    Vector2 max = position;
 
     for (int i = 0; i < codepointCount; i++) {
         Vector2 metrics = DrawTextCodepointFT(font, codepoints[i], current, tint);
+
+        if (max.x < current.x + metrics.x) {
+            max.x = current.x + metrics.x;
+        }
+
+        if (max.y < current.y + metrics.y) {
+            max.y = current.y + metrics.y;
+        }
+
         if (metrics.x == 0) {
             current.y += metrics.y;
             current.x = position.x;
@@ -429,7 +449,7 @@ DrawTextCodepointsFT(FontFT font, const int *codepoints, int codepointCount, Vec
         }
     }
 
-    return Vector2Subtract(current, position);
+    return Vector2Subtract(max, position);
 }
 
 void
