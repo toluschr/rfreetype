@@ -463,6 +463,9 @@ UnloadFontFileFT(FontFileFT fontFile)
 void
 UnloadFontCacheFT(FontCacheFT fontCache)
 {
-    UnloadTexture(fontCache.cache->texture);
+    if (fontCache.cache) {
+        UnloadTexture(fontCache.cache->texture);
+    }
+
     free(fontCache.cache);
 }
