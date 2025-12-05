@@ -1,21 +1,22 @@
 #ifndef RFREETYPE_H_
 #define RFREETYPE_H_
+#include <raylib.h>
 #include <stdint.h>
 
 typedef struct rFontCacheEntryFT rFontCacheEntryFT;
 typedef struct rFontCacheFT rFontCacheFT;
 typedef struct FT_SizeRec_ FT_SizeRec_;
 typedef struct FT_FaceRec_ FT_FaceRec_;
-typedef struct Vector2 Vector2;
-typedef struct Color Color;
 
 typedef struct GlyphInfoFT {
-    unsigned int height;
-    unsigned int width;
     unsigned int advanceX;
     unsigned int offsetX;
     unsigned int offsetY;
     unsigned int value;
+    struct {
+        unsigned int width;
+        unsigned int height;
+    } image;
 } GlyphInfoFT;
 
 typedef struct FontCacheFT {
@@ -38,7 +39,7 @@ FontFileFT LoadFontFileFromMemoryFT(const unsigned char *data, int dataSize);
 FontFileFT LoadFontFileFT(const char *filename);
 FontFT LoadFontFT(FontFileFT fontFile, unsigned int height, FontCacheFT fontCache);
 
-// Vector2 MeasureTextFT(FontFT font, const char *text);
+GlyphInfoFT GetGlyphInfoFT(FontFT font, int codepoint);
 
 Vector2 DrawTextFT(FontFT font, const char *text, int x, int y, Color tint);
 Vector2 DrawTextCodepointFT(FontFT font, int codepoint, Vector2 position, Color tint);

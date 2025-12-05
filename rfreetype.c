@@ -7,7 +7,6 @@
 
 #define INVALID_CODEPOINT 0x1FFFFF
 
-#include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
 #include <GL/gl.h>
@@ -36,7 +35,7 @@ struct rFontCacheFT {
 static FT_Library ftLibrary;
 
 static void
-InitializeFontCache(rFontCacheFT *fontCache)
+InitializeFontCache_(rFontCacheFT *fontCache)
 {
     GLint maxTextureSize;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
@@ -72,7 +71,7 @@ InitializeFontCache(rFontCacheFT *fontCache)
 }
 
 static uint32_t
-Hash_rFontCacheEntryFT(const void *a_, uint32_t nmemb)
+Hash_rFontCacheEntryFT_(const void *a_, uint32_t nmemb)
 {
     unsigned long hash = 5381;
     rFontCacheEntryFT *a = (rFontCacheEntryFT *)a_;
@@ -83,21 +82,116 @@ Hash_rFontCacheEntryFT(const void *a_, uint32_t nmemb)
 }
 
 static int
-Compare_rFontCacheEntryFT(const void *a_, const void *b_)
+Compare_rFontCacheEntryFT_(const void *a_, const void *b_)
 {
     rFontCacheEntryFT *a = (rFontCacheEntryFT *)a_;
     rFontCacheEntryFT *b = (rFontCacheEntryFT *)b_;
+    unsigned int a_data[] = {a->font, a->codepoint, a->index};
+    unsigned int b_data[] = {b->font, b->codepoint, b->index};
+    return memcmp(a_data, b_data, sizeof(a_data));
+}
 
-    if (a->font < b->font) return -1;
-    if (a->font > b->font) return +1;
+static GlyphInfoFT
+LoadGlyphFT_(FontFT font, int codepoint, int index, Rectangle *atlasRec_, Vector2 *offset_)
+{
+    bool put;
+    uint32_t id;
+    FT_Size size;
+    FT_Face face;
+    Vector2 offset;
+    Rectangle atlasRec;
+    GlyphInfoFT *gi;
+    rFontCacheFT *fontCache;
+    rFontCacheEntryFT entry = (rFontCacheEntryFT){
+        .font = font.uid,
+        .codepoint = codepoint,
+        .index = index,
+    };
 
-    if (a->codepoint < b->codepoint) return -1;
-    if (a->codepoint > b->codepoint) return +1;
+    if (font.size == NULL || font.size->generic.data == NULL) {
+        GlyphInfoFT glyphInfo;
+        Font defaultFont = GetFontDefault();
+        int index = GetGlyphIndex(defaultFont, codepoint);
 
-    if (a->index < b->index) return -1;
-    if (a->index > b->index) return +1;
+        float scaling = font.baseSize / defaultFont.baseSize;
+        glyphInfo.image.width = scaling + defaultFont.glyphs[index].image.width;
+        glyphInfo.image.height = font.baseSize;
+        glyphInfo.advanceX = (codepoint != '\n') ? (defaultFont.recs[index].width * scaling) : 0;
+        glyphInfo.offsetX = scaling/2;
+        glyphInfo.offsetY = 0;
+        glyphInfo.value = codepoint;
+        return glyphInfo;
+    }
 
-    return 0;
+    fontCache = font.size->generic.data;
+    size = font.size;
+    face = font.size->face;
+
+    if (fontCache->gridWidth * fontCache->gridHeight == 0) {
+        InitializeFontCache_(fontCache);
+    }
+
+    id = lru_cache_get_or_put(&fontCache->lc, &entry, &put);
+    gi = &fontCache->metrics[id];
+
+    if (put) {
+        FT_UInt char_index;
+
+        FT_Activate_Size(size);
+        char_index = FT_Get_Char_Index(face, codepoint);
+
+        if (face->glyph->glyph_index != char_index) {
+            FT_Load_Glyph(face, char_index, FT_LOAD_DEFAULT);
+
+            if (face->glyph->format != FT_GLYPH_FORMAT_BITMAP) {
+                FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+            }
+        }
+
+        gi->advanceX = (codepoint != '\n') ? (face->glyph->metrics.horiAdvance >> 6) : 0;
+        gi->offsetY = (size->metrics.ascender - face->glyph->metrics.horiBearingY) >> 6;
+        gi->offsetX = (face->glyph->metrics.horiBearingX) >> 6;
+        gi->value = codepoint;
+
+        // ignore the pitch
+        gi->image.width = face->glyph->bitmap.width;
+        gi->image.height = face->glyph->bitmap.rows;
+    }
+
+    uint32_t gridWidth = (gi->image.width + fontCache->cellWidth - 1) / fontCache->cellWidth;
+    uint32_t x = gridWidth ? index % gridWidth : 0;
+    uint32_t y = gridWidth ? index / gridWidth : 0;
+
+    atlasRec.x = (id % fontCache->gridWidth) * fontCache->cellWidth;
+    atlasRec.y = (id / fontCache->gridWidth) * fontCache->cellHeight;
+    atlasRec.width = gi->image.width - x * fontCache->cellWidth;
+    atlasRec.height = gi->image.height - y * fontCache->cellHeight;
+
+    if (atlasRec.width > fontCache->cellWidth) atlasRec.width = fontCache->cellWidth;
+    if (atlasRec.height > fontCache->cellHeight) atlasRec.height = fontCache->cellHeight;
+
+    offset.x = x * fontCache->cellWidth;
+    offset.y = y * fontCache->cellHeight;
+
+    if (atlasRec_) *atlasRec_ = atlasRec;
+    if (offset_) *offset_ = offset;
+
+    if (put) {
+        rlDrawRenderBatchActive();
+        glBindTexture(GL_TEXTURE_2D, fontCache->texture.id);
+
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, gi->image.width);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, offset.x);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, offset.y);
+
+        GLint swizzle[] = {GL_ONE, GL_ONE, GL_ONE, GL_ALPHA};
+        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, atlasRec.x, atlasRec.y, atlasRec.width, atlasRec.height, GL_ALPHA, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    return *gi;
 }
 
 FontCacheFT
@@ -127,8 +221,8 @@ LoadFontCacheFT(uint32_t cellWidth, uint32_t cellHeight, uint32_t nmemb)
     rc = lru_cache_init(
         &fontCache->lc,
         sizeof(rFontCacheEntryFT),
-        Hash_rFontCacheEntryFT,
-        Compare_rFontCacheEntryFT,
+        Hash_rFontCacheEntryFT_,
+        Compare_rFontCacheEntryFT_,
         NULL
     );
     if (rc < 0) goto invalid_argument;
@@ -259,135 +353,62 @@ error_activate_size:
 error_new_size:
     TRACELOG(LOG_WARNING, "FONTFT: Failed to create the font size (%s)", FT_Error_String(error));
     return out;
-
 }
 
 // Returns advance
 Vector2 DrawTextCodepointFT(FontFT font, int codepoint, Vector2 position, Color tint)
 {
-    if (font.size == NULL || font.size->generic.data == NULL) {
-        Font defaultFont = GetFontDefault();
-        int index = GetGlyphIndex(defaultFont, codepoint);
-        if (codepoint == '\n') {
-            return (Vector2){0, font.baseSize};
-        }
+    uint32_t index = 0;
 
-        float scaling = font.baseSize / defaultFont.baseSize;
-        float offsetX = scaling/2;
+    if (font.size == NULL || font.size->generic.data == NULL) {
+        GlyphInfoFT glyphInfo = LoadGlyphFT_(font, codepoint, index, NULL, NULL);
 
         DrawTextCodepoint(
-            defaultFont,
+            GetFontDefault(),
             codepoint,
-            (Vector2){position.x + offsetX, position.y},
+            (Vector2){position.x + glyphInfo.offsetX, position.y},
             font.baseSize,
             tint
         );
 
-        return (Vector2){scaling + defaultFont.recs[index].width * scaling, font.baseSize};
+        return (Vector2){glyphInfo.advanceX, glyphInfo.offsetY + font.baseSize};
     }
-
-    rFontCacheFT *fontCache = font.size->generic.data;
-    FT_Size size = font.size;
-    FT_Face face = font.size->face;
-    rFontCacheEntryFT entry = (rFontCacheEntryFT){
-        .font = font.uid,
-        .codepoint = codepoint,
-        .index = 0,
-    };
-
-    if (fontCache && fontCache->gridWidth * fontCache->gridHeight == 0) {
-        InitializeFontCache(fontCache);
-    }
-
-    if (codepoint == '\n') {
-        return (Vector2){0, size->metrics.height >> 6};
-    }
-
-    FT_Activate_Size(size);
-
-    int i = 0;
-    int j = 0;
 
     for (;;) {
-        bool put;
-        uint32_t id;
+        rFontCacheFT *fontCache = font.size->generic.data;
 
-        id = lru_cache_get_or_put(&fontCache->lc, &entry, &put);
-        if (put) {
-            FT_UInt char_index = FT_Get_Char_Index(face, codepoint);
-
-            if (face->glyph->glyph_index != char_index) {
-                FT_Load_Glyph(face, char_index, FT_LOAD_DEFAULT);
-
-                if (face->glyph->format != FT_GLYPH_FORMAT_BITMAP) {
-                    FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
-                }
-            }
-
-            fontCache->metrics[id].width = face->glyph->bitmap.width;
-            fontCache->metrics[id].height = face->glyph->bitmap.rows;
-            fontCache->metrics[id].advanceX = face->glyph->metrics.horiAdvance >> 6;
-            fontCache->metrics[id].offsetY = (size->metrics.ascender - face->glyph->metrics.horiBearingY) >> 6;
-            fontCache->metrics[id].offsetX = (face->glyph->metrics.horiBearingX) >> 6;
-            fontCache->metrics[id].value = codepoint;
-        }
-
-        GlyphInfoFT metrics = fontCache->metrics[id];
-        uint32_t x = (id % fontCache->gridWidth) * fontCache->cellWidth;
-        uint32_t y = (id / fontCache->gridWidth) * fontCache->cellHeight;
-        uint32_t w = metrics.width - (i * fontCache->cellWidth);
-        if (w > fontCache->cellWidth)
-            w = fontCache->cellWidth;
-
-        uint32_t h = metrics.height - (j * fontCache->cellHeight);
-        if (h > fontCache->cellHeight)
-            h = fontCache->cellHeight;
-
-        if (put) {
-            rlDrawRenderBatchActive();
-
-            glBindTexture(GL_TEXTURE_2D, fontCache->texture.id);
-
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, face->glyph->bitmap.pitch);
-            glPixelStorei(GL_UNPACK_SKIP_PIXELS, i * fontCache->cellWidth);
-            glPixelStorei(GL_UNPACK_SKIP_ROWS, j * fontCache->cellHeight);
-
-            GLint swizzle[] = {GL_ONE, GL_ONE, GL_ONE, GL_ALPHA};
-            glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_ALPHA, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
-
-            glBindTexture(GL_TEXTURE_2D, 0);
-        }
+        Rectangle atlasRec;
+        Vector2 offset;
+        GlyphInfoFT glyphInfo = LoadGlyphFT_(font, codepoint, index, &atlasRec, &offset);
 
         DrawTexturePro(
             fontCache->texture,
-            (Rectangle){ x, y, w, h },
+            atlasRec,
             (Rectangle){
-                i * fontCache->cellWidth + position.x + metrics.offsetX,
-                j * fontCache->cellHeight + position.y + metrics.offsetY,
-                w,
-                h
+                position.x + glyphInfo.offsetX + offset.x,
+                position.y + glyphInfo.offsetY + offset.y,
+                atlasRec.width,
+                atlasRec.height
             },
             (Vector2){ 0, 0 },
             0.0f,
             tint
         );
-        entry.index++;
 
-        if (w == fontCache->cellWidth) {
-            i = i + 1;
-            continue;
+        index++;
+
+        uint32_t gridWidth = (glyphInfo.image.width + fontCache->cellWidth - 1) / fontCache->cellWidth;
+        uint32_t gridHeight = (glyphInfo.image.height + fontCache->cellHeight - 1) / fontCache->cellHeight;
+        if (index >= gridWidth * gridHeight) {
+            return (Vector2){glyphInfo.advanceX, glyphInfo.offsetY + glyphInfo.image.height};
         }
-
-        if (h == fontCache->cellHeight) {
-            i = 0;
-            j = j + 1;
-            continue;
-        }
-
-        return (Vector2){metrics.advanceX, size->metrics.height >> 6};
     }
+}
+
+GlyphInfoFT
+GetGlyphInfoFT(FontFT font, int codepoint)
+{
+    return LoadGlyphFT_(font, codepoint, 0, NULL, NULL);
 }
 
 Vector2
@@ -468,6 +489,7 @@ UnloadFontFT(FontFT font)
         LRU_CACHE_ITERATE_MRU_TO_LRU(&fontCache->lc, i, e) {
             rFontCacheEntryFT *cacheEntry = (rFontCacheEntryFT *)e->key;
             if (cacheEntry->font == font.uid) {
+                // @todo: move_chain using new adaptive lru api
                 cacheEntry->codepoint = INVALID_CODEPOINT;
             }
         }
