@@ -1,4 +1,4 @@
-#include "lru-cache/lru-cache.h"
+#include "lru-cache.h"
 #include "rfreetype.h"
 #include <ft2build.h>
 #include FT_FREETYPE_H
