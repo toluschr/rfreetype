@@ -188,6 +188,8 @@ LoadGlyphFT_(FontFT font, int codepoint, int index, Rectangle *atlasRec_, Vector
         GLint swizzle[] = {GL_ONE, GL_ONE, GL_ONE, GL_ALPHA};
         glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
         glTexSubImage2D(GL_TEXTURE_2D, 0, atlasRec.x, atlasRec.y, atlasRec.width, atlasRec.height, GL_ALPHA, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
+
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
