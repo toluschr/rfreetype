@@ -9,13 +9,13 @@ typedef struct FT_SizeRec_ FT_SizeRec_;
 typedef struct FT_FaceRec_ FT_FaceRec_;
 
 typedef struct GlyphInfoFT {
-    unsigned int advanceX;
-    unsigned int offsetX;
-    unsigned int offsetY;
-    unsigned int value;
+    int advanceX;
+    int offsetX;
+    int offsetY;
+    int value;
     struct {
-        unsigned int width;
-        unsigned int height;
+        int width;
+        int height;
     } image;
 } GlyphInfoFT;
 
