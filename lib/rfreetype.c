@@ -490,10 +490,15 @@ UnloadFontFT(FontFT font)
         // invalidate entry
         LRU_CACHE_ITERATE_MRU_TO_LRU(&fontCache->lc, i, e) {
             rFontCacheEntryFT *cacheEntry = (rFontCacheEntryFT *)e->key;
-            if (cacheEntry->font == font.uid) {
-                // @todo: move_chain using new adaptive lru api
-                cacheEntry->codepoint = INVALID_CODEPOINT;
-            }
+            if (cacheEntry->font != font.uid) continue;
+
+            lru_cache_update_entry(
+                &fontCache->lc,
+                i,
+                e,
+                fontCache->lc.hash(cacheEntry, fontCache->lc.nmemb),
+                LRU_CACHE_ENTRY_NIL
+            );
         }
     }
 
